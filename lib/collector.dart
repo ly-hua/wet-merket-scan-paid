@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
 import 'db.dart';
 
 class CollectorPage extends StatefulWidget {
@@ -15,6 +16,8 @@ class _CollectorPageState extends State<CollectorPage> {
   String? last;
   final amtC = TextEditingController();
   final noteC = TextEditingController();
+  bool isFlashOn = false;
+  MobileScannerController cameraController = MobileScannerController();
 
   Future<void> _markPaid(String stallid) async {
     final d = await AppDB.db;
@@ -97,9 +100,62 @@ class _CollectorPageState extends State<CollectorPage> {
     );
   }
 
+  Future<void> pickImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (image != null) {
+      try {
+        final capture = await cameraController.analyzeImage(image.path);
+        if (capture != null && capture.barcodes.isNotEmpty) {
+          final code = capture.barcodes.first.rawValue;
+          if (code != null && code != last) {
+            last = code;
+            _markPaid(code);
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No QR code found in the image')),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Error scanning image')),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    cameraController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(_) => Scaffold(
-    appBar: AppBar(title: const Text('Collector — Scan')),
+    appBar: AppBar(
+      title: const Text('Collector — Scan'),
+      actions: [
+        IconButton(
+          icon: Icon(isFlashOn ? Icons.flash_on : Icons.flash_off),
+          onPressed: () {
+            setState(() {
+              isFlashOn = !isFlashOn;
+              cameraController.toggleTorch();
+            });
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.image),
+          onPressed: pickImage,
+        ),
+      ],
+    ),
     body: Column(
       children: [
         ListTile(
@@ -120,6 +176,7 @@ class _CollectorPageState extends State<CollectorPage> {
         ),
         Expanded(
           child: MobileScanner(
+            controller: cameraController,
             onDetect: (capture) {
               final code = capture.barcodes.first.rawValue;
               if (code != null && code != last) {
